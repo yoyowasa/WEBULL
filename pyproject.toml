@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "webull-gap-bot"
+version = "0.1.0"
+description = "Premarket GAP strategy trading bot for Webull"
+authors = ["YOUR_NAME <you@example.com>"]
+packages = [{ include = "gap_bot" }]   # ★追加：どのフォルダをパッケージ化するか明示
+
+[tool.poetry.dependencies]
+python = "^3.13"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.0"
+ruff = "^0.4"
+pre-commit = "^3.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
