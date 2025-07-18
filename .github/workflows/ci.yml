@@ -20,7 +20,7 @@ jobs:
       - name: Install Poetry
         run: |
           pipx install poetry
-          poetry config virtualenvs.create false --local
+          poetry config virtualenvs.create true --local
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
