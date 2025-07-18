@@ -1,6 +1,7 @@
 """run_screen.py  
 Step 1 : プレマーケット銘柄スクリーニングを実行するエントリポイント
 """
+
 from gap_bot.filters import screen_gappers
 from gap_bot.utils.config import load_config
 
