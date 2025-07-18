@@ -1,0 +1,2 @@
+cd C:\webull_gap_bot
+poetry shell

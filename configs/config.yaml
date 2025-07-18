@@ -1,0 +1,24 @@
+# config.yaml
+# プレマーケット GAP 戦略 v2 ─ スクリーニング閾値と API キー
+# 必須：数値は例なので自分の好みに調整してください。
+
+# --- Step1 スクリーニング設定 ---
+screening:
+  gap_pct: 3.0               # 標準ギャップ率 +3%
+  gap_pct_when_vix_up5: 4.0  # 当日 VIX +5% なら +4%
+  premarket_volume:
+    small_cap: 100000        # 小型株は出来高 ≥10万株
+    mid_cap: 500000          # 中型株は出来高 ≥50万株
+  float_rotation_min: 0.50   # FloatRotation > 50%
+  sns_news_score_min: 3      # SNS/News スコア ≥ +3
+
+# --- API キー（ダミー値を置き換えて下さい） ---
+api:
+  webull:
+    paper: true              # ペーパー取引なら true、本番は false
+    key: "YOUR_WEBULL_API_KEY"
+    secret: "YOUR_WEBULL_API_SECRET"
+
+# --- 出力先 ---
+paths:
+  strategy_csv: "logs/strategy.csv"  # Step8 で使用
