@@ -1,0 +1,35 @@
+# 仮想環境
+.venv/
+venv/
+env/
+
+# Python キャッシュ
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 編集一時ファイル
+*.log
+*.tmp
+*.swp
+
+# VSCodeなどIDE設定
+.vscode/
+.idea/
+
+# テスト出力
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# パッケージビルド
+build/
+dist/
+*.egg-info/
+
+# その他
+.DS_Store
