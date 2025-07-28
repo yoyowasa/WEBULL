@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "webull-bot"
+version = "0.1.0"
+description = "Webull OpenAPI gap bot"
+authors = ["YOUR_NAME"]
+license = "Apache-2.0"
+packages = [
+  { include = "gap_bot" },
+  { include = "scripts" },
+  { include = "sdk" }
+]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+webull-python-sdk-core = "^0.1.14"
+webull-python-sdk-trade = "^0.1.14"
+webull-python-sdk-quotes-core = "^0.1.14"
+webull-python-sdk-trade-events-core = "^0.1.14"
+webull-python-sdk-mdata = "^0.1.14"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
