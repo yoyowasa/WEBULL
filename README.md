@@ -29,3 +29,7 @@ poetry run python scripts/run_entry.py --screened screened_YYYYMMDD.json --equit
 
 # 6. live monitor (Step 4)
 poetry run python scripts/run_live.py
+
+
+cd E:\webull_bot
+poetry shell

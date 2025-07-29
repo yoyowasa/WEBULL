@@ -18,6 +18,8 @@ webull-python-sdk-trade = "^0.1.14"
 webull-python-sdk-quotes-core = "^0.1.14"
 webull-python-sdk-trade-events-core = "^0.1.14"
 webull-python-sdk-mdata = "^0.1.14"
+python-dotenv = "^1.1.1"
+alpaca-py = "^0.42.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

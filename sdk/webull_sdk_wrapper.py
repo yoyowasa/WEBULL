@@ -1,71 +1,154 @@
-
 """
 sdk.webull_sdk_wrapper
 ----------------------
-公式 Webull Python SDK を薄くラップする最小クライアント。
-関数ごとに「何をする関数なのか」を異形で明記する。
+公式 Webull SDK を “使いやすい 1 クラス” にまとめた薄ラッパー。
+スクリプト側は WebullClient だけ import すれば OK。
+
+■ 依存ライブラリ
+- webull-python-sdk-core        (共通基盤クライアント)
+- webull-python-sdk-quotes      (気配 & 市況データ)
+- webull-python-sdk-trade       (発注まわり)
+- python-dotenv                 (.env 読み込み用)
+
+■ 必要な環境変数 (.env)
+WEBULL_APP_ID, WEBULL_SECRET, ACCESS_TOKEN, ACCOUNT_ID
 """
 
-# すべての import はファイル冒頭に統一
+from __future__ import annotations
+
 import os
-from typing import Any
+from typing import Any, Dict, List, Optional
 
-# sdk/webull_sdk_wrapper.py の冒頭に、必ずこの３行だけを残す
-from webullsdkcore.client               import ApiClient
-from webullsdktrade.api                 import API        as TradeApi
-from webullsdkquotescore.quotes_client import QuotesClient as QuotesApi
+from dotenv import load_dotenv
+from webullsdkcore.client import ApiClient                # 共通 HTTP 基盤
+from webullsdkquotescore.quotes_client import QuotesClient        # 気配
+from webullsdktrade.api import API as TradeApi
+    # 発注
 
-
+__all__ = ["WebullClient"]
 
 
 class WebullClient:
-    """Webull 公式 SDK を操作する便利クラス。"""
+    """QuotesClient と TradeClient をまとめた便利クラス"""
 
-    def __init__(self) -> None:
-        # 何をする？ → 環境変数から認証情報を取得
-        app_id: str | None = os.getenv("WEBULL_APP_ID")
-        app_secret: str | None = os.getenv("WEBULL_APP_SECRET")
-        if not app_id or not app_secret:
-            raise RuntimeError(
-                "環境変数 WEBULL_APP_ID / WEBULL_APP_SECRET を設定してください"
-            )
-
-        # 何をする？ → SDK の共通 ApiClient を初期化
-        self._client = ApiClient(
-            app_id=app_id,
-            app_secret=app_secret,
-            region="US",      # 必要なら可変にしても良い
-            is_sandbox=True,  # 本番は False
-        )
-
-        # 何をする？ → API モジュールをプロパティに保持
-        self.trade_api = TradeApi(self._client)
-        self.quotes_api = QuotesApi(self._client)
-
-    # -------------------------------------------------
-    # 公開メソッド
-    # -------------------------------------------------
-
-    def get_quote(self, symbol: str) -> dict[str, Any]:
-        """指定シンボルの最新株価スナップショットを取得する。"""
-        return self.quotes_api.get_snapshot(
-            category="US_STOCK",
-            symbols=symbol,
-        )
-
-    def place_market_order(
+    # ---------- 初期化 ----------
+    def __init__(
         self,
-        ticker: str,
-        quantity: int,
-        side: str = "BUY",
-        time_in_force: str = "DAY",
-    ) -> dict[str, Any]:
-        """成行で株式注文を発注する。"""
-        return self.trade_api.place_order(
-            category="US_STOCK",
-            ticker=ticker,
-            price_type="MARKET",
-            order_type=side,   # BUY / SELL
-            qty=quantity,
-            time_in_force=time_in_force,
+        app_id: str,
+        secret: str,
+        access_token: str,
+        account_id: str,
+        region: str = "US",
+    ) -> None:
+        self._api = ApiClient(app_key=app_id, app_secret=secret, access_token=access_token)
+        self.quotes = QuotesClient(self._api, region=region)
+        self.trade = TradeApi(self._api, account_id=account_id, region=region)
+        self.account_id = account_id
+
+    # ---------- ファクトリ ----------
+    @classmethod
+    def from_env(cls) -> "WebullClient":
+        """
+        .env または環境変数から認証情報を読んで初期化
+        必須キー: WEBULL_APP_ID / WEBULL_SECRET / ACCESS_TOKEN / ACCOUNT_ID
+        """
+        load_dotenv()  # .env が無ければ空読みされるだけ
+
+        keys = ("WEBULL_APP_KEY", "WEBULL_SECRET", "ACCOUNT_ID")
+        missing = [k for k in keys if not os.getenv(k)]
+        if missing:
+            raise RuntimeError(f"環境変数が足りません: {', '.join(missing)}")
+
+        return cls(
+            app_id=os.environ["WEBULL_APP_ID"],
+            secret=os.environ["WEBULL_SECRET"],
+            # access_token=os.environ["ACCESS_TOKEN"],
+            account_id=os.environ["ACCOUNT_ID"],
         )
+
+    # ======================================================================
+    #  -----------  Market-Data ラッパー  ----------------------------------
+    # ======================================================================
+    def get_premarket_gainers(self) -> List[Dict[str, Any]]:
+        """
+        プレマーケットの Top Gainers を取得して
+        Step 2 で期待するキー構造に整形して返す
+        """
+        raw = self.quotes.get_top_list(list_type="gainers", sub_type="preMarket")
+
+        out: List[Dict[str, Any]] = []
+        for item in raw.get("data", []):
+            out.append(
+                {
+                    "symbol": item["tickerId"],
+                    "prevClose": item["preClose"],
+                    "preMarketPrice": item["last"],
+                    "preMarketVolume": item["volume"],
+                    "floatShares": item.get("floatShares", 0),
+                    "sentimentScore": item.get("sentimentScore", 0.0),
+                }
+            )
+        return out
+
+    def get_quote(self, symbol: str, *, extended: bool = True) -> Dict[str, Any]:
+        """Bid / Ask を含む最新気配を取得"""
+        return self.quotes.get_quote(symbol=symbol, include_pre=extended)
+
+    # ======================================================================
+    #  -----------  Trading ラッパー  --------------------------------------
+    # ======================================================================
+    # 指値発注 --------------------------------------------------------------
+    def place_limit_order(
+        self,
+        *,
+        symbol: str,
+        qty: int,
+        price: float,
+        extended_hours: bool = True,
+        tif: str = "GTC",
+    ) -> Dict[str, Any]:
+        return self.trade.place_order(
+            symbol=symbol,
+            order_type="LMT",
+            side="BUY",
+            quantity=qty,
+            price=price,
+            time_in_force=tif,
+            extended_hours=extended_hours,
+        )
+
+    # ブラケット添付 --------------------------------------------------------
+    def attach_bracket(
+        self,
+        *,
+        parent_order_id: str,
+        take_profit: float,
+        stop_loss: float,
+        break_even_distance: float,
+    ) -> Dict[str, Any]:
+        return self.trade.attach_bracket_order(
+            parent_order_id=parent_order_id,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+            break_even_distance=break_even_distance,
+        )
+
+    # 注文取得・キャンセル --------------------------------------------------
+    def get_active_orders(self) -> List[Dict[str, Any]]:
+        return self.trade.get_active_orders().get("data", [])
+
+    def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        return self.trade.cancel_order(order_id=order_id)
+
+    # ポジション & ブラケット ----------------------------------------------
+    def get_positions(self) -> List[Dict[str, Any]]:
+        return self.trade.get_positions().get("data", [])
+
+    def get_bracket(self, symbol: str) -> Optional[Dict[str, Any]]:
+        for order in self.get_active_orders():
+            if order["symbol"] == symbol and order.get("orderType") in ("TP", "SL"):
+                return order
+        return None
+
+    def modify_bracket(self, *, order_id: str, stop_loss: float) -> Dict[str, Any]:
+        return self.trade.modify_order(order_id=order_id, stop_loss=stop_loss)
