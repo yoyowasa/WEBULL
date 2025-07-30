@@ -20,6 +20,8 @@ from typing import Callable, Dict, List
 
 from gap_bot.filters import StockData
 from sdk.webull_sdk_wrapper import WebullClient          # 発注は必ず Webull
+from datetime import datetime
+from gap_bot.utils.logger import append_csv
 
 # Alpaca REST Quote
 from sdk.quotes_alpaca import get_quote as alpaca_quote  # type: ignore
@@ -103,3 +105,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
