@@ -11,6 +11,7 @@ Step 2-3 : 指値エントリー & ブラケット注文
 
 # ── import ────────────────────────────────────────────
 import argparse
+import csv
 import json
 import math
 import time
@@ -59,6 +60,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sl", type=float, default=0.025)
     return p.parse_args()
 
+# 注文情報をCSVに追記する関数を定義
+def append_csv(order_id, symbol, qty, entry_price, tp_price, sl_price):
+    with open("logs/order_log.csv", "a", newline="") as f:
+        writer = csv.writer(f)
+        # 各注文情報を1行に追記（例: シンボル、数量、エントリー価格、利確価格、損切価格、注文ID）
+        writer.writerow([symbol, qty, entry_price, tp_price, sl_price, order_id])
+
 
 # ── main ─────────────────────────────────────────────
 def main() -> None:
@@ -90,15 +98,23 @@ def main() -> None:
             price=round(limit_px, 2),
             extended_hours=True,
         )["orderId"]
-        print(f"  {stk.symbol}: limit {limit_px:.2f} ×{shares} → {pid}")
-
-        # --- ブラケット ---
         webull_client.attach_bracket(
             parent_order_id=pid,
             take_profit=round(limit_px * (1 + args.tp), 2),
             stop_loss=round(limit_px * (1 - args.sl), 2),
             break_even_distance=args.tp / 2,
         )
+        # 発注完了後、注文情報をCSVログに追記
+        append_csv("order_log.csv", [
+            datetime.utcnow().isoformat(),
+            stk.symbol,
+            shares,
+            round(limit_px, 2),
+            round(limit_px * (1 + args.tp), 2),
+            round(limit_px * (1 - args.sl), 2),
+            pid                     # ← place_limit_order の戻り値で取得した注文 ID
+        ])
+
 
         time.sleep(0.25)   # レート制限対策
 

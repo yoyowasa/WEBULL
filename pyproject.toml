@@ -20,6 +20,13 @@ webull-python-sdk-trade-events-core = "^0.1.14"
 webull-python-sdk-mdata = "^0.1.14"
 python-dotenv = "^1.1.1"
 alpaca-py = "^0.42.0"
+pyyaml = "^6.0.2"
+lightgbm = "^4.6.0"
+scikit-learn = "^1.7.1"
+psutil = "^7.0.0"
+aiohttp = "^3.12.15"
+discord-webhook = "^1.4.1"
+yfinance = "^0.2.65"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

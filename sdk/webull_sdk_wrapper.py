@@ -11,7 +11,7 @@ sdk.webull_sdk_wrapper
 - python-dotenv                 (.env 読み込み用)
 
 ■ 必要な環境変数 (.env)
-WEBULL_APP_ID, WEBULL_SECRET, ACCESS_TOKEN, ACCOUNT_ID
+WEBULL_APP_KEY, WEBULL_SECRET, ACCOUNT_ID
 """
 
 from __future__ import annotations
@@ -22,8 +22,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from webullsdkcore.client import ApiClient                # 共通 HTTP 基盤
 from webullsdkquotescore.quotes_client import QuotesClient        # 気配
-from webullsdktrade.api import API as TradeApi
-    # 発注
+from webullsdktrade.api import API as TradeApi            # 発注
 
 __all__ = ["WebullClient"]
 
@@ -34,15 +33,14 @@ class WebullClient:
     # ---------- 初期化 ----------
     def __init__(
         self,
-        app_id: str,
+        app_key: str,
         secret: str,
-        access_token: str,
         account_id: str,
         region: str = "US",
     ) -> None:
-        self._api = ApiClient(app_key=app_id, app_secret=secret, access_token=access_token)
-        self.quotes = QuotesClient(self._api, region=region)
-        self.trade = TradeApi(self._api, account_id=account_id, region=region)
+        self._api = ApiClient(app_key=app_key, app_secret=secret)
+        self.quotes = QuotesClient(app_key=app_key, app_secret=secret)
+        self.trade = TradeApi(self._api, region=region)
         self.account_id = account_id
 
     # ---------- ファクトリ ----------
@@ -50,7 +48,7 @@ class WebullClient:
     def from_env(cls) -> "WebullClient":
         """
         .env または環境変数から認証情報を読んで初期化
-        必須キー: WEBULL_APP_ID / WEBULL_SECRET / ACCESS_TOKEN / ACCOUNT_ID
+        必須キー: WEBULL_APP_KEY / WEBULL_SECRET / ACCOUNT_ID
         """
         load_dotenv()  # .env が無ければ空読みされるだけ
 
@@ -60,9 +58,8 @@ class WebullClient:
             raise RuntimeError(f"環境変数が足りません: {', '.join(missing)}")
 
         return cls(
-            app_id=os.environ["WEBULL_APP_ID"],
+            app_key=os.environ["WEBULL_APP_KEY"],
             secret=os.environ["WEBULL_SECRET"],
-            # access_token=os.environ["ACCESS_TOKEN"],
             account_id=os.environ["ACCOUNT_ID"],
         )
 

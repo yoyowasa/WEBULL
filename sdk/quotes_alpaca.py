@@ -73,6 +73,7 @@ def list_premarket_gappers(
         timeframe=TimeFrame.Minute,
         start=start,
         end=end,
+        feed="iex", 
         limit=1,  # 最新1本
         adjustment=None,
     )
@@ -80,7 +81,7 @@ def list_premarket_gappers(
 
     out: List[Dict[str, Any]] = []
     for sym in symbols:
-        if sym not in bars.index.get_level_values("symbol"):
+        if "symbol" not in bars.columns or sym not in bars["symbol"].values:
             continue
 
         row = bars.xs(sym, level="symbol").iloc[-1]
@@ -115,7 +116,8 @@ def get_quote(symbol: str) -> Dict[str, Any]:
     """何をする関数? → 指定銘柄の最新 Bid / Ask を返す (IEX Top)"""
     client = _get_historical_client()
     req = StockLatestQuoteRequest(symbol_or_symbols=symbol)
-    q = client.get_stock_latest_quotes(req)
+    q = client.get_stock_latest_quote(req)
+
     quote = q[symbol]
 
     return {

@@ -1,0 +1,8 @@
+# screen_config.yaml
+gap: 1.2          # ギャップ率 (%)
+vol: 20000        # プレマーケット出来高
+rot: 50.0         # Float rotation (%)
+sent: 3.0         # Sentiment score
+provider: alpaca  # webull | alpaca
+symbols: symbols.txt
+out: screened_custom.json
