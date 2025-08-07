@@ -56,7 +56,7 @@ def screen_stocks(
     stocks: List[StockData],
     gap_threshold: float = 3.0,
     min_volume: int = 100_000,
-    min_rotation: float = 50.0,
+    min_rotation: float = 10.0,
     min_sentiment: float = 3.0,
 ) -> List[StockData]:
     """4 条件すべて通過した銘柄だけを返す"""

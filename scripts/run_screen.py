@@ -54,13 +54,62 @@ except ImportError:
     list_premarket_gappers = None  # Alpaca 利用しない場合ここは None
 
 def get_float_shares(symbol: str) -> int:
-    """浮動株数(Float)を取得する関数（あとで API 実装）"""
-    # TODO: API から取得して正しい値を返す
-    return 0
+    """
+    流通株数 (Float) を取得する関数
+    - メモリキャッシュで同一銘柄の重複アクセスを回避
+    - 未取得なら yfinance で取得し、成功したらキャッシュに入れる
+    - 取得できなければ 0 を返して後段フィルタで弾く
+    """
+    # ── メモリキャッシュ ─────────────────────
+    if not hasattr(get_float_shares, "_cache"):
+        get_float_shares._cache = {}              # type: ignore[attr-defined]
+    cache: dict[str, int] = get_float_shares._cache  # type: ignore[attr-defined]
+
+    if symbol in cache:                           # キャッシュ HIT
+        return cache[symbol]
+
+    # ── API 呼び出し (yfinance) ──────────────
+    try:
+        import yfinance as yf                     # 関数内 import
+    except ImportError:
+        logger.debug("yfinance 未インストール→ float_shares を 0 扱い")
+        cache[symbol] = 0
+        return 0
+
+    try:
+        info = yf.Ticker(symbol).fast_info
+        shares_float = int(info.get("shares_float", 0))
+        cache[symbol] = shares_float              # キャッシュ保存
+        return shares_float
+    except Exception as e:
+        logger.debug("%s float_shares error: %s", symbol, e)
+        cache[symbol] = 0
+        return 0
+
+
 
 def get_sentiment_score(symbol: str) -> float:
-    """SNS／ニュース スコアを取得する関数（あとで API 実装）"""
-    # TODO: API から取得して正しい値を返す
+    """
+    SNS／ニュースのポジティブ度合いを数値で返す関数
+    - Finnhub の News-Sentiment API を利用 (要 FINNHUB_API_KEY)
+    - スコアは -1.0〜+1.0 程度で返る想定。取得できなければ 0.0
+    """
+    token = os.getenv("FINNHUB_API_KEY")
+    if not token:
+        logger.debug("FINNHUB_API_KEY 未設定→ sentiment_score を 0 扱い")
+        return 0.0
+
+    url = "https://finnhub.io/api/v1/news-sentiment"
+    try:
+        r = requests.get(url, params={"symbol": symbol, "token": token}, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            # Finnhub のレスポンス例では `companyNewsScore` が中心値
+            return float(data.get("companyNewsScore", 0.0))
+        logger.debug("%s sentiment HTTP %s", symbol, r.status_code)
+    except Exception as e:
+        logger.debug("%s sentiment error: %s", symbol, e)
+
     return 0.0
 
 # ── Webull 用データ取得 ──────────────────────────────
@@ -196,7 +245,9 @@ def fetch_premarket_alpaca(symbols: List[str], args) -> List[StockData]:
 
         logger.debug("%s prev=%.2f pre=%.2f gap=%+.2f%% vol=%d",
                      sym, prev_close, pre_price, gap_pct * 100, pre_vol)
-        append_csv("raw_premarket.csv", [sym, prev_close, pre_price, pre_vol])
+        Path("logs").mkdir(exist_ok=True)  # ログ用ディレクトリが無ければ作成
+        append_csv("logs/raw_premarket.csv", [sym, prev_close, pre_price, pre_vol])
+
 
 
         # --- フィルタ ---
@@ -218,8 +269,9 @@ def fetch_premarket_alpaca(symbols: List[str], args) -> List[StockData]:
                 previous_close=prev_close,
                 premarket_price=pre_price,
                 premarket_volume=pre_vol,
-                float_shares=0,          # 追加が必要なら別 API で取得
-                sentiment_score=0.0,     # 任意：SNS スコア
+                float_shares=float_shares,            # 取得済みの Float を格納
+                sentiment_score=sent_score,           # SNS／News スコアを格納
+
             )
         )
 
@@ -254,8 +306,11 @@ def parse_args() -> argparse.Namespace:
 # ── メイン ────────────────────────────────────────────
 def main() -> None:
     args = parse_args()
+
     global filters
     filters = build_filters(Path(__file__).parent.parent / "screen_config.yaml")
+    logger.debug("active thresholds → gap=%s%% vol=%s rot=%s%% sent=%s",
+             args.gap, args.vol, args.rot, args.sent)
 
     # 1) データ取得
     if args.provider == "webull":
@@ -266,6 +321,16 @@ def main() -> None:
             raise SystemExit("alpaca 利用時は --symbols <file> が必須です")
         symbols = [s.strip() for s in args.symbols.read_text().splitlines() if s.strip()]
         raw_stocks = fetch_premarket_alpaca(symbols, args)
+
+    # ▼ ここから追加 ─ プレマーケットの生データを CSV に追記保存する
+    raw_df = pd.DataFrame([s.__dict__ for s in raw_stocks])      # list → DataFrame
+    csv_path = Path("logs/raw_premarket.csv")                    # 保存パス
+    csv_path.parent.mkdir(exist_ok=True)                         # logs/ ディレクトリ確保
+    file_exists = csv_path.exists()                              # ヘッダー出力要否
+    raw_df.to_csv(csv_path, mode="a", header=not file_exists, index=False)  # 追記保存
+    # ▲ 追加はここまで ────────────────
+
+    # 2) フィルタリング
 
 
     # 2) フィルタリング

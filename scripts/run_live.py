@@ -79,10 +79,13 @@ def make_quote_func(provider: str) -> Callable[[str], Dict]:
 
 # ── CLI ──────────────────────────────────────
 def parse_args() -> argparse.Namespace:
+    
     p = argparse.ArgumentParser(description="live monitor & BE slide")
     p.add_argument("--provider", choices=["webull", "alpaca"], default="webull")
     p.add_argument("--tp", type=float, default=0.07, help="TP 幅(例 0.07=+7%)")
     p.add_argument("--loop", type=float, default=30.0, help="監視間隔 sec")
+    p.add_argument("--paper", action="store_true", help="run in paper-trading mode")  # ペーパートレード切り替え
+
     return p.parse_args()
 
 # ── メイン ────────────────────────────────────

@@ -40,7 +40,7 @@ class WebullClient:
     ) -> None:
         self._api = ApiClient(app_key=app_key, app_secret=secret)
         self.quotes = QuotesClient(app_key=app_key, app_secret=secret)
-        self.trade = TradeApi(self._api, region=region)
+        self.trade = TradeApi(self._api,)
         self.account_id = account_id
 
     # ---------- ファクトリ ----------
