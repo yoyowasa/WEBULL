@@ -19,10 +19,11 @@ import requests
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List
-
+from decimal import Decimal
 from gap_bot.filters import StockData                    # 型利用のみ
 from sdk.webull_sdk_wrapper import WebullClient          # Webull API
 from sdk.quotes_alpaca import get_quote as alpaca_quote  # Alpaca REST
+from gap_bot.utils.notify import send_discord_message  # 取引イベントを Discord へ通知
 
 # ── グローバル ────────────────────────────────
 webull_client: WebullClient | None = None
@@ -61,6 +62,50 @@ halt_state: dict[str, bool] = {}                 # symbol → True (=halt中)
 halt_ts:    dict[str, datetime | None] = {}      # symbol → unhalt時刻
 next_poll = datetime.utcnow()                    # 次回ポーリング時刻
 
+HALF_TP_DONE: set[str] = set()  # 何をするコードか: 銘柄ごとの「半分利確済み」を覚えて二重発注を防ぐモジュール共通の状態
+LAST_ET_DATE = None  # 何をする変数か: 前回処理時の ET 日付を記録しておく（切替検知用）
+
+def reset_half_tp_if_new_day():
+    """
+    役割: 米国東部時間で日付が変わったら HALF_TP_DONE を空にして、翌日に二重発注を起こさないようにする
+    """
+    # この関数でしか使わないため関数内 import（DST を正しく処理するため zoneinfo を使用）
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    global LAST_ET_DATE, HALF_TP_DONE
+
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    if LAST_ET_DATE != today_et:
+        HALF_TP_DONE.clear()      # 新しい営業日に入ったので「半分利確済み」記録をリセット
+        LAST_ET_DATE = today_et   # 何をする行か: リセット後の基準日を更新
+
+# ── 取引実行ヘルパ ────────────────────────────
+def execute_half_tp(position, current_price, client):
+    """
+    役割: TP の 1/2 (+3 % など) に到達した瞬間、
+          建玉の半分を成行で利確する。
+    """
+    avg = Decimal(str(position["average_price"]))  # 取得単価
+    gain_pct = (Decimal(str(current_price)) - avg) / avg * Decimal("100")
+    half_tp = Decimal(str(position["tp_pct"])) / Decimal("2")
+
+    # +TP/2 に達し、まだ半分利確していないときだけ実行
+    if (
+        gain_pct >= half_tp
+        and position["qty"] > 1
+        and not position.get("half_tp_done")
+    ):
+        qty = position["qty"] // 2
+        client.place_market_order(
+            symbol=position["symbol"],
+            qty=qty,
+            side="sell",
+            market=True
+        )
+        send_discord_message(f"半分利確完了 : {position['symbol']} {qty}株 @ {current_price}")  # 取引イベントを Discord に通知する行
+
+        position["half_tp_done"] = True  # もう一度売らないようフラグ保存
+
 def fetch_halt_status() -> set[str]:
     """現在 Halt 中のシンボル集合を返す"""
     url = "https://quoteapi.webullbroker.com/api/information/market/halts?region=US"
@@ -88,12 +133,14 @@ def parse_args() -> argparse.Namespace:
 
     return p.parse_args()
 
+
 # ── メイン ────────────────────────────────────
 def main() -> None:
     args = parse_args()
     global webull_client
     webull_client = get_client()
     quote_func = make_quote_func(args.provider)
+    client = WebullClient()  # ← 利確で発注するための Webull 通信用クライアント
 
     cancel_time = datetime.combine(
         datetime.now(tz=ET).date(),
@@ -150,12 +197,16 @@ def main() -> None:
                     halt_ts[sym] = now
                     print(f"UNHALT {sym} REST → will set stop")
 
+        reset_half_tp_if_new_day()  # 何をする行か: 米国ETで日付が変わっていたら半分利確フラグ(HALF_TP_DONE)をリセットする
+
         # ③ 価格更新ループ
         for pos in positions:
             q = quote_func(pos["symbol"])
             cur = q["bidPrice"] or q["askPrice"]
             if not cur:
                 continue
+            execute_half_tp(pos, cur, client)  # TP/2 到達なら半分利確
+
             update_trailing_sl(pos, cur, pos["tp_pct"])
 
             # Unhalt 復帰 5 分以内に逆指値(+1 %) 発注

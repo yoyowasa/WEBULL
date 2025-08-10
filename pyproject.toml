@@ -1,36 +1,45 @@
+[project]
+name = "webull-bot"        # プロジェクト名（旧 [tool.poetry].name）
+version = "0.1.0"          # バージョン（旧 [tool.poetry].version）
+description = "Webull OpenAPI gap bot"  # 説明（旧 [tool.poetry].description）
+readme = "README.md"       # 説明ファイル（旧 [tool.poetry].readme）
+license = "Apache-2.0"     # ライセンス（SPDX識別子）
+authors = [
+  { name = "あなたの名前" } # 作者情報（PEP 621 形式）
+]
+requires-python = ">=3.11,<3.12"  # 対応 Python バージョン
+
+# ランタイム依存（PEP 621 / PEP 508 形式）
+dependencies = [
+  "webull-python-sdk-core>=0.1.14,<0.2.0",           # Webull SDK: Core
+  "webull-python-sdk-trade>=0.1.14,<0.2.0",          # Webull SDK: Trade
+  "webull-python-sdk-quotes-core>=0.1.14,<0.2.0",    # Webull SDK: Quotes Core
+  "webull-python-sdk-trade-events-core>=0.1.14,<0.2.0", # Webull SDK: Trade Events Core
+  "webull-python-sdk-mdata>=0.1.14,<0.2.0",          # Webull SDK: Market Data
+  "python-dotenv>=1.1.1,<2.0.0",                     # .env ロード
+  "alpaca-py>=0.42.0,<0.43.0",                       # Alpaca API
+  "pyyaml>=6.0.2,<7.0",                              # YAML I/O
+  "lightgbm>=4.6.0,<5.0.0",                          # 学習器
+  "scikit-learn>=1.7.1,<2.0.0",                      # 前処理・評価
+  "psutil>=7.0.0,<8.0.0",                            # システム情報
+  "aiohttp>=3.12.15,<4.0.0",                         # 非同期HTTP
+  "discord-webhook>=1.4.1,<2.0.0",                   # Discord通知
+  "yfinance>=0.2.65,<0.3.0",                         # Yahoo Financeヘルパ
+  "requests>=2.32,<3.0",                              # HTTPクライアント（Webhook 送信等）
+    "tzdata>=2024.1,<2026.0"                            # Windows の zoneinfo 用 ← 新規追加
+]
+
 [tool.poetry]
-name = "webull-bot"
-version = "0.1.0"
-description = "Webull OpenAPI gap bot"
-authors = ["YOUR_NAME"]
-license = "Apache-2.0"
+# パッケージ収集の対象（プロジェクト内の配布物となるディレクトリを指定）
 packages = [
   { include = "gap_bot" },
   { include = "scripts" },
   { include = "sdk" }
 ]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-webull-python-sdk-core = "^0.1.14"
-webull-python-sdk-trade = "^0.1.14"
-webull-python-sdk-quotes-core = "^0.1.14"
-webull-python-sdk-trade-events-core = "^0.1.14"
-webull-python-sdk-mdata = "^0.1.14"
-python-dotenv = "^1.1.1"
-alpaca-py = "^0.42.0"
-pyyaml = "^6.0.2"
-lightgbm = "^4.6.0"
-scikit-learn = "^1.7.1"
-psutil = "^7.0.0"
-aiohttp = "^3.12.15"
-discord-webhook = "^1.4.1"
-yfinance = "^0.2.65"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"
+pytest = "^8.4.1"  # 開発用（テスト）
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]  # ビルドに使うバックエンド
 build-backend = "poetry.core.masonry.api"
