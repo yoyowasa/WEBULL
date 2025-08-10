@@ -41,6 +41,22 @@ def market_close_position(client: WebullClient, symbol: str, qty: int) -> str:
     send_discord_message(f"引け前クローズ発注: {symbol} {qty}株 注文ID={oid}")  # Discord通知
     return str(oid)  # 呼び出し元へ注文IDを返す
 
+def cancel_open_orders(client: WebullClient) -> int:
+    """
+    役割: いま板に残っている未約定注文をすべてキャンセルし、件数を返す
+    """
+    count = 0  # 何をする行か: 何件キャンセルしたか数える
+    for o in client.get_open_orders():  # 何をする行か: 開いている注文を順番に取り出す
+        try:
+            client.cancel_order(o["orderId"])  # 何をする行か: その注文をキャンセルする
+            count += 1
+        except Exception:
+            # 何をする行か: 失敗しても処理を止めない（他の注文を続けてキャンセルする）
+            pass
+    send_discord_message(f"未約定キャンセル: {count}件")  # 何をする行か: 結果を Discord に知らせる
+    return count  # 何をする行か: キャンセルできた件数を呼び出し元に返す
+
+
 def close_all_positions(client: WebullClient) -> list[str]:
     """
     役割: 全ポジションを market_close_position() で成行クローズし、
@@ -75,6 +91,8 @@ def write_close_log(order_ids: List[str]) -> None:  # 決済注文 ID をまと�
 def main() -> None:
     """CLI エントリポイント"""
     client = WebullClient()  # 何をする行か: 発注に使う Webull クライアントを main() のスコープで生成する
+    cancel_open_orders(client)  # 何をする行か: まず板に残っている未約定注文をすべて取り消す
+
     order_ids = close_all_positions(client)  # 何をする行か: 全ポジションを成行クローズして注文IDのリストを受け取る
     write_close_log(order_ids)               # 何をする行か: 取得した注文IDをCSVに保存する
 
