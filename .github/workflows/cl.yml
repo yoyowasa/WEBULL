@@ -1,29 +1,33 @@
-name: CI
+name: CI  # 何をする行か: このワークフローの名前
 
-on:
+on:       # 何をする行か: いつ実行するか（push / PR）
   push:
-    branches: [ main ]
-  pull_request:
+    branches: [ main, develop ]  # 何をする行か: main / develop への push で起動
+  pull_request:                   # 何をする行か: すべてのPRで起動
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  test:                           # 何をするジョブか: テスト実行ジョブ
+    runs-on: ubuntu-latest        # 何をする行か: 実行OSを指定
 
-      - name: Setup Python
+    steps:
+      - uses: actions/checkout@v4 # 何をする行か: リポジトリのソースコードを取得
+
+      - name: Setup Python        # 何をするステップか: 指定バージョンのPythonをセットアップ
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"            # 何をする行か: pipキャッシュを有効化（Poetryの内部pipにも有効）
 
-      - name: Install Poetry
+      - name: Install Poetry      # 何をするステップか: Poetry本体をインストール
         run: |
-          pip install poetry
+          python -m pip install --upgrade pip   # 何をする行か: pipを最新化
+          pip install poetry                    # 何をする行か: Poetryのインストール
 
-      - name: Install dependencies
-        run: |
-          poetry install --no-interaction
+      - name: Lock dependencies   # 何をするステップか: pyproject.tomlの変更に合わせて lock を再生成（今回のエラー対策の要）
+        run: poetry lock --no-interaction --no-ansi
 
-      - name: Run tests
-        run: |
-          poetry run pytest -q
+      - name: Install dependencies  # 何をするステップか: lock に基づいて依存をインストール
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Run tests           # 何をするステップか: テストを実行
+        run: poetry run pytest -q
