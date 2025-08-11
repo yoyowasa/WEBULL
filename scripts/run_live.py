@@ -52,6 +52,16 @@ def update_trailing_sl(pos: dict, price: float, tp_pct: float) -> float:
     sl = float(pos.get("sl", entry))
     side = str(pos.get("side", "long")).lower()
     half = 0.5 * float(tp_pct or 0.0)  # 何をする行か: TP%の半分(例: 0.03 → 0.015)を計算
+    # 何をする行か: フルTP到達ならSLを「建値とTPの中間（半値利確）」へ移動して即終了（利益を強く保護）
+    full = float(tp_pct or 0.0)  # 何をする行か: TP%の値そのもの（例: 0.03）
+    if side in {"long", "buy"} and price >= entry * (1.0 + full):
+        target = entry * (1.0 + full / 2.0)      # 何をする行か: ロングの半値利確価格
+        pos["sl"] = max(sl, target)               # 何をする行か: 既存SLより悪化させない（より保護的にする）
+        return pos["sl"]                          # 何をする行か: 目的の更新が完了したので終了
+    if side in {"short", "sell"} and price <= entry * (1.0 - full):
+        target = entry * (1.0 - full / 2.0)      # 何をする行か: ショートの半値利確価格
+        pos["sl"] = min(sl, target)               # 何をする行か: 既存SLより悪化させない（より保護的にする）
+        return pos["sl"]                          # 何をする行か: 目的の更新が完了したので終了
 
     if side in {"long", "buy"}:
         trigger = entry * (1.0 + half)  # 何をする行か: ロングの半分TP到達価格
@@ -70,15 +80,6 @@ def update_trailing_sl(pos: dict, price: float, tp_pct: float) -> float:
             return new_sl
         pos["sl"] = sl  # 何をする行か: 未到達なら変更なし
         return sl
-
-    # 何をする行か: フルTP到達時はSLを「建値とTPの中間（半値利確位置）」へ移動して利益をロックする
-    if pos.get("side") == "long" and price >= pos["entry"] * (1 + tp_pct):
-        target = pos["entry"] * (1 + tp_pct / 2)  # 何をする行か: ロング用の半値利確価格を計算
-        pos["sl"] = max(pos["sl"], target)        # 何をする行か: SLを引き上げ（ロングは大きい方がより保護的）
-
-    if pos.get("side") == "short" and price <= pos["entry"] * (1 - tp_pct):
-        target = pos["entry"] * (1 - tp_pct / 2)  # 何をする行か: ショート用の半値利確価格を計算
-        pos["sl"] = min(pos["sl"], target)        # 何をする行か: SLを引き下げ（ショートは小さい方がより保護的）
 
     # 何をする行か: 想定外のside入力時は変更せず現状維持
     pos["sl"] = sl
