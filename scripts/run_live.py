@@ -45,34 +45,99 @@ def get_client() -> WebullClient:
     return webull_client
 
 # ── Trailing Stop-Loss ヘルパ ──────────────────
-def update_trailing_sl(pos: dict, price: float, tp_pct: float) -> None:
-    if webull_client is None:  # 何をする行か: クライアント未初期化時の AttributeError を防ぎ、安全にスキップする
-        return
-    
-    """TP/2→SL=建値、TP→SL=TP/2 へ引き上げ（long/short 両対応）"""
-    entry, side, sl = pos["entry"], pos["side"], pos["sl"]
-    half = tp_pct / 2
-    if side == "long":
-        if price >= entry * (1 + tp_pct) and sl < entry * (1 + half):
-            pos["sl"] = round(entry * (1 + half), 2)
-            webull_client.modify_bracket(order_id=pos.get("order_id", pos.get("oid")), stop_loss=pos["sl"])
-            send_discord_message(f"SL繰上げ: {pos['symbol']} → {pos['sl']} (TP到達, long)")  # 何をする行か: BE→TP/2 への逆指値繰上げをDiscordへ通知
+def update_trailing_sl(pos: dict, price: float, tp_pct: float) -> float:
+    """何をする関数なのか: 価格が利確目標(TP%)の半分に到達したら、ストップ(sl)を建値(entry)へ繰り上げ/繰り下げする。更新後のslを返す"""
+    # 何をする行か: 入力(辞書)から必要な値を安全に取り出して型をそろえる
+    entry = float(pos.get("entry"))
+    sl = float(pos.get("sl", entry))
+    side = str(pos.get("side", "long")).lower()
+    half = 0.5 * float(tp_pct or 0.0)  # 何をする行か: TP%の半分(例: 0.03 → 0.015)を計算
 
-        elif price >= entry * (1 + half) and sl < entry:
-            pos["sl"] = round(entry, 2)
-            webull_client.modify_bracket(order_id=pos.get("order_id", pos.get("oid")), stop_loss=pos["sl"])
-            send_discord_message(f"SL→BE: {pos['symbol']} → {pos['sl']} (TP/2到達, long)")  # 何をする行か: 長ポジの逆指値を建値へ繰り上げたことをDiscordへ通知
+    if side in {"long", "buy"}:
+        trigger = entry * (1.0 + half)  # 何をする行か: ロングの半分TP到達価格
+        if price >= trigger:
+            new_sl = max(sl, entry)  # 何をする行か: 既存slより低くならないように建値へ繰り上げ
+            pos["sl"] = new_sl
+            return new_sl
+        pos["sl"] = sl  # 何をする行か: 未到達なら変更なし
+        return sl
 
-    else:  # short
-        if price <= entry * (1 - tp_pct) and sl > entry * (1 - half):
-            pos["sl"] = round(entry * (1 - half), 2)
-            webull_client.modify_bracket(order_id=pos.get("order_id", pos.get("oid")), stop_loss=pos["sl"])
-            send_discord_message(f"SL繰上げ: {pos['symbol']} → {pos['sl']} (TP到達, short)")  # 何をする行か: 短ポジのTP到達で逆指値をTP/2へ繰上げたことをDiscordへ通知
+    if side in {"short", "sell"}:
+        trigger = entry * (1.0 - half)  # 何をする行か: ショートの半分TP到達価格
+        if price <= trigger:
+            new_sl = min(sl, entry)  # 何をする行か: 既存slより高くならないように建値へ繰り下げ
+            pos["sl"] = new_sl
+            return new_sl
+        pos["sl"] = sl  # 何をする行か: 未到達なら変更なし
+        return sl
 
-        elif price <= entry * (1 - half) and sl > entry:
-            pos["sl"] = round(entry, 2)
-            webull_client.modify_bracket(order_id=pos.get("order_id", pos.get("oid")), stop_loss=pos["sl"])
-            send_discord_message(f"SL→BE: {pos['symbol']} → {pos['sl']} (TP/2到達, short)")  # 何をする行か: 短ポジの逆指値を建値へ繰り上げたことをDiscordへ通知
+    # 何をする行か: 想定外のside入力時は変更せず現状維持
+    pos["sl"] = sl
+    return sl
+
+# ── 逆指値発注ヘルパ ──────────────────────────
+def ensure_stop_at_sl(pos: dict, client, paper: bool = False) -> bool:
+    """何をする関数なのか: 現在の pos['sl']（建値など）と同じ価格の逆指値STOPをアクティブに保つ。修正APIが無いSDKもあるため、既存STOPがあればキャンセル→指定価格で再作成する"""
+    # 何をする行か: ペーパーモードでは実発注せず成功扱いにする（実運用時のみ発注）
+    if paper:
+        return True
+
+    # 何をする行か: 銘柄・サイド・数量・新しいSTOP価格を安全に取り出し/正規化
+    symbol = str(pos.get("symbol", "")).upper()
+    side = "sell" if str(pos.get("side", "long")).lower() in {"long", "buy"} else "buy"
+    qty = int(abs(float(pos.get("qty", 0)) or 0))
+    if not symbol or qty <= 0:
+        return False
+    new_stop = round(float(pos.get("sl")), 2)
+
+    # 何をする行か: アクティブ注文から、この銘柄のSTOP注文（対側）を1件探す
+    try:
+        orders = client.get_active_orders() or []
+    except Exception:
+        orders = []
+    def _get(d, *keys):
+        for k in keys:
+            if isinstance(d, dict) and k in d:
+                return d[k]
+        return None
+
+    target_oid = None
+    target_stop = None
+    for o in orders:
+        if str(_get(o, "symbol", "ticker", "sym") or "").upper() != symbol:
+            continue
+        o_side = str(_get(o, "side", "action", "orderSide") or "").lower()
+        if o_side not in {"buy", "sell"} or o_side != side:
+            continue
+        otype = str(_get(o, "orderType", "type", "order_type") or "").lower()
+        if "stop" not in otype and not any(k in o and str(o[k]).lower().startswith("stop") for k in ("flag", "category")):
+            continue
+        target_oid = str(_get(o, "orderId", "id", "oid", "clientOrderId", "cloid") or "")
+        s_px = _get(o, "stopPrice", "stop_price", "triggerPrice", "auxPrice", "stop", "stop_px")
+        try:
+            target_stop = float(s_px) if s_px is not None else None
+        except Exception:
+            target_stop = None
+        break
+
+    # 何をする行か: 既存STOPの価格が同じなら何もしない
+    if target_oid and target_stop is not None and abs(target_stop - new_stop) < 0.005:
+        return True
+
+    # 何をする行か: 既存STOPがあればキャンセル（失敗しても続行）
+    if target_oid:
+        try:
+            client.cancel_order(target_oid)
+        except Exception:
+            pass
+
+    # 何をする行か: 建値SLの価格でSTOPを新規作成
+    try:
+        res = client.place_stop_order(symbol=symbol, qty=qty, stop_price=new_stop, side=side)
+        return bool(isinstance(res, dict) and (res.get("success") is True or res.get("orderId")))
+    except Exception:
+        return False
+
 
 
 # ── REST Halt ポーリング ──────────────────────
@@ -155,7 +220,36 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--paper", action="store_true", help="run in paper-trading mode")  # ペーパートレード切り替え
 
     return p.parse_args()
+# ── 発注ヘルパ ──────────────────────────────
 
+def place_entry(webull_client, symbol: str, side: str, qty: int, limit: float, tif: str = "DAY", extended: bool = False, tp_pct: float = None, sl_pct: float = None) -> dict:
+    """何をする関数なのか: 指値エントリーを一括実行する。TP/SLが割合(例:0.07)で渡されたら価格へ変換し、SDK差異を吸収するWebullラッパで発注し、結果をDiscordへ通知する"""
+    s = str(side).strip().lower()  # 何をする行か: サイド表記を正規化（buy/long/SELLなどの揺れを吸収）
+    is_long = s in {"buy", "long"}  # 何をする行か: ロング判定
+    is_short = s in {"sell", "short"}  # 何をする行か: ショート判定
+    if not (is_long or is_short):  # 何をする行か: 想定外入力はbuy扱いでフォールバック
+        is_long = True
+        s = "buy"
+
+    # 何をする行か: TP/SLを割合→価格に換算（エクイティ想定。ロングは+でTP/-でSL、ショートは逆）
+    tp = None
+    sl = None
+    if isinstance(tp_pct, (int, float)) and tp_pct is not None:
+        tp = limit * (1 + tp_pct) if is_long else limit * (1 - tp_pct)
+    if isinstance(sl_pct, (int, float)) and sl_pct is not None:
+        sl = limit * (1 - sl_pct) if is_long else limit * (1 + sl_pct)
+
+    # 何をする行か: 発注処理をラッパーで統一し、TP/SL(%)→価格換算も自動化してDiscord通知まで行う
+    res = place_entry(webull_client, symbol=symbol, side=side, qty=qty, limit=limit, tif=tif, extended=extended, tp_pct=tp_pct, sl_pct=sl_pct)  
+    oid = res.get("orderId")
+
+    # 何をする行か: 結果を人間が読みやすい形でDiscord通知
+    tp_str = f"{tp:.2f}" if tp is not None else "-"
+    sl_str = f"{sl:.2f}" if sl is not None else "-"
+    msg = f"ENTRY {symbol} {('LONG' if is_long else 'SHORT')} x{qty} @ {limit:.2f} {tif}{' EXT' if extended else ''} TP={tp_str} SL={sl_str} OID={oid or 'N/A'}"
+    send_discord_message(msg)
+
+    return res  # 何をする行か: 上位で orderId や success を確認できるようそのまま返す
 
 # ── メイン ────────────────────────────────────
 def main() -> None:
@@ -244,7 +338,15 @@ def main() -> None:
             execute_half_tp(pos, cur, client, paper=args.paper)  # 何をする行か: CLI引数のpaperフラグを渡し、ペーパーモード時は実発注せず通知だけにする
 
 
-            update_trailing_sl(pos, cur, pos["tp_pct"])
+            tp_ratio = pos.get("tp_pct", getattr(args, "tp", None))  # 何をする行か: ポジション固有TP%が無ければCLI引数--tpを使う
+            prev_sl = pos.get("sl")  # 何をする行か: SL更新前の値を保持して比較に使う
+            new_sl = update_trailing_sl(pos, price=cur, tp_pct=tp_ratio)  # 何をする行か: 半分TP到達ならSLを建値(entry)へ自動移動
+            if new_sl != prev_sl:  # 何をする行か: いまSLが更新されたかどうかを判定
+                synced = ensure_stop_at_sl(pos, client=webull_client, paper=args.paper)  # 何をする行か: 実際のSTOP注文を建値に同期（paper時は発注せずTrue）
+                send_discord_message(f"TSL→建値移動: {pos.get('symbol','?')} SL={new_sl:.2f} (entry={float(pos.get('entry',0)):.2f}) {'[STOP更新OK]' if synced else '[STOP更新失敗]'}")  # 何をする行か: 同期結果をDiscordへ通知
+                ensure_stop_at_sl(pos, client=webull_client, paper=args.paper)  # 何をする行か: 実際のSTOP注文をpos["sl"](建値)へ同期する。paper=Trueなら発注せずスキップ
+
+
 
             # Unhalt 復帰 5 分以内に逆指値(+1 %) 発注
             t0 = halt_ts.get(pos["symbol"])
