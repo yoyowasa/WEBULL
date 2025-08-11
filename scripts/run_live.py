@@ -71,6 +71,15 @@ def update_trailing_sl(pos: dict, price: float, tp_pct: float) -> float:
         pos["sl"] = sl  # 何をする行か: 未到達なら変更なし
         return sl
 
+    # 何をする行か: フルTP到達時はSLを「建値とTPの中間（半値利確位置）」へ移動して利益をロックする
+    if pos.get("side") == "long" and price >= pos["entry"] * (1 + tp_pct):
+        target = pos["entry"] * (1 + tp_pct / 2)  # 何をする行か: ロング用の半値利確価格を計算
+        pos["sl"] = max(pos["sl"], target)        # 何をする行か: SLを引き上げ（ロングは大きい方がより保護的）
+
+    if pos.get("side") == "short" and price <= pos["entry"] * (1 - tp_pct):
+        target = pos["entry"] * (1 - tp_pct / 2)  # 何をする行か: ショート用の半値利確価格を計算
+        pos["sl"] = min(pos["sl"], target)        # 何をする行か: SLを引き下げ（ショートは小さい方がより保護的）
+
     # 何をする行か: 想定外のside入力時は変更せず現状維持
     pos["sl"] = sl
     return sl
